@@ -1,0 +1,322 @@
+---
+title: "Modelo regresión simple y multiple"
+author: "Miguel Ángel Acosta Chinchilla"
+date: "16/11/2021"
+output: html_document
+---
+
+$$CARGAMOS~LA~BASE~DE~DATOS$$
+La base la llamamos *d*
+```{r warning=FALSE}
+library(readxl)
+library(ggplot2)
+library(gridExtra)
+d<-read_excel("C:\\Users\\MiguelAngel\\Documents\\R Miguelo\\Juan Ortiz (SanTT)\\Competitividad.xlsx")
+```
+
+#Variables evaluadas
+Global: Escalafón Global de Competitividad
+F.E.: Fortaleza de la Economía
+I.L.: Infraestructura y logística
+B.S.C.H.: Bienestar Social y Capital Humano
+C.T.I.: Ciencia, Tecnología e Innovación
+I.G.P.: Institucionalidad y Gestión Pública
+Regíon: Regón natural de Colombia
+
+
+```{r}
+head(d)
+```
+Recodificamos variables, en especial los factores.
+```{r}
+d$Región<-as.factor(d$Región)
+str(d)
+```
+$$CONTRUCCIÓN~DEL~MODELO~DE~REGRESIÓN~LINEAL~MULTIPLE$$
+
+Seleccionamos la variable independiente Ídice Global y omitimos algunas variables.
+```{r}
+mod = lm(Global  ~., data = d[,-c(1,8)])
+summary(mod)
+```
+Se encontró un Adjusted R-squared muy cercano a 1, casi perfecto. Se deben verificar que se cumplan los supuestos antes de realizar conclusiones. 
+
+## Residuos Ordinarios
+```{r}
+e = resid(mod) ; e
+```
+## Elementos diagonal de la matriz H
+```{r}
+s = summary(mod)$sigma ; s
+hii = hatvalues(mod) ; hii
+```
+#Residuos estandarizados
+```{r}
+r = e/(s*(sqrt(1-hii))) ; r 
+r = rstandard(mod) ; r
+```
+
+
+# Residuos estudentizados
+```{r}
+ri = rstudent(mod) ; ri
+```
+
+# Predicción
+```{r}
+pr = predict(mod) ; pr
+```
+**Algunos gráficos explicativos**
+```{r}
+plot(pr, e)
+plot(pr, sqrt(abs(r)))
+```
+
+Los residuales ordinarios y estandarizados no presentan un comportamiendo que puedan indicar tendencia lineal o se asemeje a alguna figura geométrica o se aleje de los supuestos de aleatoriedad  o varianza constante. No existe una tendencia marcada. Encontramos una nube de puntos dispersa. Sin embargo, es de notar que existen 4 valores posiblemente atípicos. En conclusión, no se rechaza la hipótesis de normalidad de los residuales en este modelo.
+```{r}
+qqnorm(r)
+qqline(r, col="chocolate4")
+```
+
+Se evidencia una desviación de la normalidad en la cola inferior de los residuales. Se debe realizar una prueba de normalidad de los residuales para mayor certeza en este supuesto.
+
+# Prueba de normalidad
+```{r}
+shapiro.test(r)
+```
+
+Shapiro-Wilk normality test Indica que los residuos del modelo propuesto sí tienen una distribución normal, ya que el *p-value = 0.4168* encontrado es superior al 0.05 de significancia. 
+
+
+# Grafico de variables explicativas  
+```{r}
+plot(d$Global, r)
+plot(d$F.E., r)
+plot(d$I.L., r)
+plot(d$Región,r)
+plot(d$B.S.C.H., r)
+plot(d$ C.T.I., r)
+plot(d$ I.G.P., r)
+```
+
+Se evidencia que existen valores atípicos en cada gráfico. En algunos se presentan 3 y en otro 4 datos atípicos. Estos pueden estar afectando el modelo
+
+$$ OBSERVACIONES~ INFLUYENTES$$
+```{r}
+p = length(mod$coefficients)-1 ; p
+n = nrow(d) ; n
+```
+
+
+
+# Apalancamiento
+```{r}
+apa = hii >= 2*(p+1)/n ; apa
+d[apa,]
+```
+
+Indica que existen 14 valores de apalancamiento los cuales modifican el intercepto del modelo. Sin embargo hay que tener en cuenta que la base de datos inicial presenta 32 datos, entonces si se eliminan los 14 valores de apalancamiento nos quedaría la mitad de los datos iniciales. Se debe escoger con cuidado para no alterar mucho el comportamiento de los datos.
+
+# Inconsitente
+```{r}
+inc = abs(ri) >= qt(1-0.05/(2*n),n-p-2) ; inc
+d[inc,]
+
+```
+
+No existen puntos inconstentes, todos se marcaron como **FALSE**, en caso contrario deberia aparecer **TRUE** para el posible dato inconsistente.
+
+# Medidas de influencia
+```{r}
+inf = influence.measures(mod) 
+#inf
+#inf$is.inf
+d[apply(inf$is.inf, 1, sum)>0,]  
+```
+
+Existen 5 valores que infringen el critero de influencia.
+
+
+```{r message=FALSE, warning=FALSE}
+library(lmtest)
+bptest(mod)
+```
+
+Breusch-Pagan test indica que la varianza de los residuales de este modelo es constante. Ya que el  *p-value = 0.09148* encontrado es superior al 0.05 de significancia. Entonces no se rechaza la *Homocedasticidad* de los residuales.
+
+En conclusión tenemos que los residuales siguen una distribucion aporoximadamente normal, son aleatorios, independientes y presentan varianza constante.
+
+
+```{r}
+plot(mod)
+```
+
+De las gráficas se desprende la presencia de posibles datos atípicos en las filas 15,31,32. Dos de estos valores tambien fueron catalogados como influyentes según los analisis anteriores.
+
+```{r}
+# Datos atípicos e influyentes de la base inicial.
+d[c(15,31,32),]
+```
+
+
+# Datos atípicos
+```{r}
+cooksd<-cooks.distance(mod)
+
+plot(cooksd, pch="*", cex=2)
+abline(h = 5*mean(cooksd, na.rm=T), col="green") 
+ text(x=1:length(cooksd)+1, y=cooksd,
+       labels=ifelse(cooksd>5*mean(cooksd, na.rm=T),
+        names(cooksd),""),
+        col="red")
+
+```
+
+El valor de la fila 15 (Guanía) es influyete en términos de la distancia de Cooks. También catalogado como valor influyente.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot1 <- ggplot(data = d, aes(F.E., mod$residuals)) +
+    geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) +
+    theme_bw()
+
+plot2 <- ggplot(data = d, aes(I.L., mod$residuals)) +
+    geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) +
+    theme_bw()
+
+plot3 <- ggplot(data = d, aes(B.S.C.H., mod$residuals)) +
+    geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) +
+    theme_bw()
+
+plot4 <- ggplot(data = d, aes(C.T.I., mod$residuals)) +
+    geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) +
+    theme_bw()
+
+plot5 <- ggplot(data = d, aes(I.G.P., mod$residuals)) +
+    geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) +
+    theme_bw()
+
+grid.arrange(plot1, plot2, plot3, plot4,plot5)
+```
+
+Encontramos que se cumple una linealidad para todos los predictores del modelo. Donde la mayoría de puntos estan cercanos a 0 para cada una de las variables evaluadas.
+
+
+$$NUEVO~MODELO~DE~REGRESIÓN~LINEAL~MULTIMPLE$$
+Se crea un nuevo modelo pero se retiran los datos **influyentes.**
+
+```{r}
+d2<-d[-c(5,13,15,26,31,32),-c(1,8)]
+mod2 = lm(Global  ~., data =d2)
+summary(mod2)
+```
+
+Se evidencia que todas la variables son significativas y un Adjusted R-squared alto, cercano a 1.
+
+```{r}
+plot(mod2)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+library(olsrr)
+all.mod = ols_step_all_possible(mod2) ; all.mod
+```
+
+Para el **mod2** se usaron 5 varibles. Se debe escoger el numero de predictores cercanos a este valor de acuerdo al indice Mallows.
+
+Mallows indica que el mejor modelo debe contener las variales F.E. I.L. B.S.C.H. C.T.I. I.G.P., ya que presnta un indice de Mallow's Cp= 6. Muy cercano al valor de las variables que contiene el modelo evaluado. Ademas, usando estas variables Mallows indica que se puede explicar el comportamientos de la variable dependiente *Indice global*
+
+```{r}
+sub.mod = ols_step_best_subset(mod) ; sub.mod
+```
+
+Indica que el menor ACI lo presenta el modelo que contiene las variables  F.E. I.L. B.S.C.H. C.T.I. I.G.P. Este modelo corresponde al mismo que presenta el mejor índice de  Mallows.
+
+```{r}
+summary(step(mod2, direction = "both"))
+```
+
+Suguiere que el mejor modelo es aquel que contiene las siguientes variables F.E. + I.L. + B.S.C.H. + C.T.I. + I.G.P
+
+
+```{r}
+cor(d2[,-1])
+```
+
+
+```{r message=FALSE, warning=FALSE}
+library(psych)
+
+pairs.panels(d2[,-1],
+             method="pearson",
+             hist.col ="green")
+
+```
+
+Sin Embargo, al evaluar las correlaciones, se evidencia aque existe multicolinealidad entre todas las variable predictoras.
+
+Entonces para seleccionar el mejor modelo de regresión lineal para el **Indice Global** se va a construir variable por variable hasta encontrar un modelo que no presente multicolinealidad.
+
+Los daots evaluados presenta multicolineadlidad. Entonces se debe proponer un modelo de regresión simple.
+
+```{r}
+mod3<-lm(formula = Global ~ F.E., data = d2)
+summary(mod3)
+```
+Este modelo presenta un Adjusted R-squared:  0.9139
+
+```{r}
+mod4<-lm(formula = Global ~ I.L., data = d2)
+summary(mod4)
+```
+Este modelo presenta un Adjusted R-squared:  0.8691
+
+```{r}
+mod5<-lm(formula = Global ~ B.S.C.H., data = d2)
+summary(mod5)
+```
+Este modelo presenta un Adjusted R-squared:  0.8632
+
+
+```{r}
+mod6<-lm(formula = Global ~ C.T.I., data = d2)
+summary(mod6)
+```
+Este modelo presenta un Adjusted R-squared:  0.6707
+
+```{r}
+mod7<-lm(formula = Global ~ I.G.P., data = d2)
+summary(mod7)
+```
+Este modelo presenta un Adjusted R-squared:  0.6707
+
+Ahora, de todos los modelos evaluados, escogemos el que presentó mayor Adjusted R-squared
+
+```{r}
+summary(mod3)
+```
+Evaluamos el criterio de AIC
+```{r}
+AIC(mod3, mod4, mod5, mod6, mod7)
+```
+El modelo (mod3) presenta el menor valor de AIC.
+
+```{r}
+plot(mod3)
+```
+
+
+Finalmente, despues de realizar el analisis completo para encontrar el modelo de regresión linieal de estos datos, se plantea que para predecir el indice de Competitividad Global debe estar en función de la Fortaleza de la Economia.
+
+Entonces, el modelo lineal simple es capaz de predecir de 91.93 % de la variabilidad observada. Además, es significativo y satisface las condiciones para este tipo de regresión.
+
+## Y = 5.0190  + 0.9104X1
+
+La ecuación indica que por cada punto que aumenta la Fortaleza de la Economia, el índice Global de Competitividad aumenta 0.91.
+Además, cuando la Fortaleza de la Economia es 0, el índice Global de Competitividad aumenta 5.1
+
+
+
+
+
+
